@@ -43,6 +43,7 @@ import com.gastrocare.compass.ui.components.NumberField
 import com.gastrocare.compass.ui.components.PillMultiSelect
 import com.gastrocare.compass.ui.components.SectionCard
 import com.gastrocare.compass.ui.components.SelectablePill
+import com.gastrocare.compass.ui.components.TextInputField
 import com.gastrocare.compass.ui.theme.GastroColors
 
 @Composable
@@ -67,6 +68,14 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
         Spacer(Modifier.height(14.dp))
 
         SectionCard(title = "Личные данные") {
+            TextInputField(
+                label = "Как к вам обращаться",
+                value = profile.name,
+                placeholder = "Например, Анна",
+                maxLength = 40,
+                onValueChange = { value -> repo.updateProfile(profile.copy(name = value)) }
+            )
+            Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SelectablePill("Мужской", profile.sex == Sex.MALE, { repo.updateProfile(profile.copy(sex = Sex.MALE)) }, Modifier.weight(1f))
                 SelectablePill("Женский", profile.sex == Sex.FEMALE, { repo.updateProfile(profile.copy(sex = Sex.FEMALE)) }, Modifier.weight(1f))

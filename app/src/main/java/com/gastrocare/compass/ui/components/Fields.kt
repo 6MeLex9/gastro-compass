@@ -13,10 +13,18 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
-/** Числовое поле ввода с подписью и суффиксом. */
+/**
+ * Числовое поле ввода с подписью.
+ *
+ * Внимание: поле намеренно фильтрует всё, кроме цифр, и открывает цифровую клавиатуру.
+ * Для имён, названий продуктов и блюд используйте [TextInputField] — иначе ввести буквы
+ * не получится.
+ */
 @Composable
 fun NumberField(
     label: String,
@@ -36,6 +44,36 @@ fun NumberField(
         singleLine = true,
         keyboardOptions = KeyboardOptions(
             keyboardType = if (allowDecimal) KeyboardType.Decimal else KeyboardType.Number
+        ),
+        modifier = modifier.fillMaxWidth()
+    )
+}
+
+/**
+ * Текстовое поле: буквы, пробелы, дефисы — имена, названия продуктов и блюд.
+ *
+ * @param maxLength ограничение длины, чтобы случайная вставка не сломала вёрстку
+ */
+@Composable
+fun TextInputField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String? = null,
+    maxLength: Int = 80,
+    capitalizeWords: Boolean = true
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { input -> onValueChange(input.take(maxLength)) },
+        label = { Text(label) },
+        placeholder = placeholder?.let { text -> { Text(text) } },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Text,
+            capitalization = if (capitalizeWords) KeyboardCapitalization.Words else KeyboardCapitalization.None,
+            imeAction = ImeAction.Next
         ),
         modifier = modifier.fillMaxWidth()
     )

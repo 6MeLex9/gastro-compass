@@ -36,6 +36,7 @@ import com.gastrocare.compass.ui.components.NumberField
 import com.gastrocare.compass.ui.components.PillMultiSelect
 import com.gastrocare.compass.ui.components.SectionCard
 import com.gastrocare.compass.ui.components.SelectablePill
+import com.gastrocare.compass.ui.components.TextInputField
 import com.gastrocare.compass.ui.theme.GastroColors
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
@@ -113,11 +114,12 @@ private fun StepWelcome(draft: UserProfile, update: (UserProfile) -> Unit) {
             style = MaterialTheme.typography.bodyMedium
         )
         Spacer(Modifier.height(12.dp))
-        NumberField(
+        TextInputField(
             label = "Как к вам обращаться (необязательно)",
             value = draft.name,
-            allowDecimal = false,
-            onValueChange = { update(draft.copy(name = it.filter { ch -> !ch.isDigit() })) }
+            placeholder = "Например, Анна",
+            maxLength = 40,
+            onValueChange = { update(draft.copy(name = it)) }
         )
         Spacer(Modifier.height(12.dp))
         NoticeCard(
