@@ -1,0 +1,17 @@
+# Нормализация переводов строк: репозиторий собирается и на Windows, и на Linux/macOS.
+* text=auto eol=lf
+
+# Скрипты Windows должны остаться с CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Бинарные файлы — без преобразований
+*.png binary
+*.jpg binary
+*.webp binary
+*.jar binary
+*.apk binary
+*.aab binary
+*.keystore binary
+*.jks binary

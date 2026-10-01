@@ -1,0 +1,20 @@
+# Gradle
+.gradle/
+build/
+app/build/
+
+# Локальные настройки среды (путь к Android SDK)
+local.properties
+
+# Android Studio
+.idea/
+*.iml
+captures/
+
+# Артефакты сборки и отчёты
+dist/*.apk
+build-reports/
+
+# ОС
+.DS_Store
+Thumbs.db
