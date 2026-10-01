@@ -4,8 +4,10 @@ import com.gastrocare.compass.domain.model.DayLog
 import com.gastrocare.compass.domain.model.Diagnosis
 import com.gastrocare.compass.domain.model.Goal
 import com.gastrocare.compass.domain.model.MacroTarget
+import com.gastrocare.compass.domain.model.MealSlot
 import com.gastrocare.compass.domain.model.Nutrition
 import com.gastrocare.compass.domain.model.NutritionTargets
+import com.gastrocare.compass.domain.model.PlannedMeal
 import com.gastrocare.compass.domain.model.RedFlag
 import com.gastrocare.compass.domain.model.RiskLevel
 import com.gastrocare.compass.domain.model.SafetyCheck
@@ -176,19 +178,47 @@ class TargetCalculator {
             else -> 28.0
         }
 
-        val mealCount = when {
-            diagnoses.contains(Diagnosis.GERD) || diagnoses.contains(Diagnosis.HERNIA) -> 6
-            diagnoses.contains(Diagnosis.PANCREATITIS) -> 6
-            diagnoses.contains(Diagnosis.ULCER) || diagnoses.contains(Diagnosis.GASTRITIS_HIGH) -> 5
-            profile.goal == Goal.GAIN_WEIGHT -> 6
-            else -> profile.mealsPerDay.coerceIn(3, 6)
+        // Количество приёмов задаёт пользователь: его режим важнее «идеального» плана.
+        // Но если он выбрал заметно меньше рекомендованного, приложение предупреждает,
+        // а не молча меняет настройку (раньше выбор игнорировался при ГЭРБ).
+        val mealCount = profile.mealsPerDay.coerceIn(3, 6)
+        val recommendedMeals = profile.recommendedMealCount
+        if (mealCount < recommendedMeals) {
+            val extra = recommendedMeals - mealCount
+            notes += "Вы выбрали $mealCount приёмов, при вашем диагнозе рекомендуется $recommendedMeals. " +
+                "Это допустимо, но тогда каждая порция должна быть меньше (около " +
+                "${(calories / mealCount).roundToInt()} ккал), а перерывы между приёмами — не длиннее 4 часов."
+            safety += "Мало приёмов пищи ($mealCount вместо $recommendedMeals) означает крупные порции: " +
+                "растянутый желудок давит на сфинктер. Если появятся симптомы — верните " +
+                "$recommendedMeals приёмов, добавив ${if (extra > 1) "$extra небольших перекусов" else "один небольшой перекус"}."
+        } else if (mealCount > recommendedMeals) {
+            notes += "Вы выбрали $mealCount приёмов — это даже мягче рекомендованных $recommendedMeals. " +
+                "Следите, чтобы суммарная калорийность оставалась в норме."
         }
 
         val lastMealHour = ((profile.sleepHour - 3) + 24) % 24
+        val mealHoursText = plannedMealHours(profile, mealCount)
+            .joinToString(", ") { (slot, hour) -> "${slot.short}: ${hourText(hour)}" }
+
+        // Вода: личная настройка важнее расчётной, но подсказываем ориентир.
+        val waterGoalMl = profile.effectiveWaterGoalMl
+        if (profile.waterGoalMl > 0) {
+            notes += "Личный лимит воды: ${waterGoalMl} мл в сутки (вы задали его в профиле)."
+        } else {
+            notes += "Ориентир по воде — ${waterGoalMl} мл в сутки (30 мл на кг массы тела). " +
+                "Значение можно изменить в профиле."
+        }
+        if (diagnoses.contains(Diagnosis.GERD) || diagnoses.contains(Diagnosis.BARRETTS) ||
+            diagnoses.contains(Diagnosis.HERNIA)
+        ) {
+            notes += "Воду пейте между приёмами пищи, а не во время еды: большой объём вместе с едой " +
+                "растягивает желудок. За 30 минут до и после еды — не больше половины стакана."
+        }
 
         // --- 6. Общие рекомендации режима ---------------------------------------
         notes += "Дробное питание: $mealCount приёмов примерно по " +
             "${(calories / mealCount).roundToInt()} ккал. Порция не больше 350 г — это защищает сфинктер."
+        notes += "Ваш режим: $mealHoursText. Время приёмов можно изменить в профиле."
         notes += "Последний приём пищи — до ${lastMealHour}:00 (за 3 часа до сна). Ночная изжога почти всегда " +
             "следствие позднего ужина."
         if (diagnoses.contains(Diagnosis.GERD) || diagnoses.contains(Diagnosis.BARRETTS)) {
@@ -250,7 +280,7 @@ class TargetCalculator {
             fiberTargetGrams = fiberTarget,
             mealCount = mealCount,
             lastMealHour = lastMealHour,
-            waterMl = 1800.0,
+            waterMl = waterGoalMl.toDouble(),
             notes = notes,
             safetyWarnings = safety
         )
@@ -529,21 +559,59 @@ class TargetCalculator {
         return advice
     }
 
-    /** План приёмов пищи по калориям — чтобы распределить норму, а не съесть её вечером. */
-    fun mealPlan(targets: NutritionTargets): List<Pair<String, Double>> {
-        val c = targets.calories
-        return when (targets.mealCount) {
-            3 -> listOf("Завтрак" to c * 0.3, "Обед" to c * 0.4, "Ужин" to c * 0.3)
-            4 -> listOf("Завтрак" to c * 0.25, "Обед" to c * 0.35, "Полдник" to c * 0.15, "Ужин" to c * 0.25)
-            5 -> listOf(
-                "Завтрак" to c * 0.22, "Второй завтрак" to c * 0.13, "Обед" to c * 0.30,
-                "Полдник" to c * 0.13, "Ужин" to c * 0.22
-            )
+    /**
+     * Шаблон режима: какие слоты участвуют при заданном числе приёмов и какую долю
+     * дневной калорийности забирает каждый. Доли дают в сумме 1,0.
+     */
+    private fun planTemplate(mealCount: Int): List<Pair<MealSlot, Double>> = when (mealCount) {
+        3 -> listOf(
+            MealSlot.BREAKFAST to 0.30,
+            MealSlot.LUNCH to 0.40,
+            MealSlot.DINNER to 0.30
+        )
 
-            else -> listOf(
-                "Завтрак" to c * 0.20, "Второй завтрак" to c * 0.12, "Обед" to c * 0.25,
-                "Полдник" to c * 0.13, "Ужин" to c * 0.20, "Перед сном" to c * 0.10
+        4 -> listOf(
+            MealSlot.BREAKFAST to 0.25,
+            MealSlot.LUNCH to 0.35,
+            MealSlot.SNACK to 0.15,
+            MealSlot.DINNER to 0.25
+        )
+
+        5 -> listOf(
+            MealSlot.BREAKFAST to 0.22,
+            MealSlot.SECOND_BREAKFAST to 0.13,
+            MealSlot.LUNCH to 0.30,
+            MealSlot.SNACK to 0.13,
+            MealSlot.DINNER to 0.22
+        )
+
+        else -> listOf(
+            MealSlot.BREAKFAST to 0.20,
+            MealSlot.SECOND_BREAKFAST to 0.12,
+            MealSlot.LUNCH to 0.25,
+            MealSlot.SNACK to 0.13,
+            MealSlot.DINNER to 0.20,
+            MealSlot.LATE_SNACK to 0.10
+        )
+    }
+
+    /** Время приёмов пищи по плану: используется в пояснениях к целям. */
+    private fun plannedMealHours(profile: UserProfile, mealCount: Int): List<Pair<MealSlot, Int>> =
+        planTemplate(mealCount).map { (slot, _) -> slot to profile.mealHour(slot) }
+
+    private fun hourText(hour: Int): String = hour.toString().padStart(2, '0') + ":00"
+
+    /**
+     * План приёмов пищи с временем и калорийностью — чтобы пользователь видел режим,
+     * а не только цифры, и мог настроить часы в профиле.
+     */
+    fun mealPlan(profile: UserProfile, targets: NutritionTargets): List<PlannedMeal> =
+        planTemplate(targets.mealCount).map { (slot, share) ->
+            PlannedMeal(
+                slot = slot,
+                title = slot.title,
+                calories = targets.calories * share,
+                hour = profile.mealHour(slot)
             )
         }
-    }
 }

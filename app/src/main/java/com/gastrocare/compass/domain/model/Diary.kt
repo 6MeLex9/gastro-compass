@@ -2,17 +2,24 @@ package com.gastrocare.compass.domain.model
 
 import java.util.UUID
 
-/** Приёмы пищи с типовым временем — используются для правил режима. */
-enum class MealSlot(val title: String, val defaultHour: Int) {
-    BREAKFAST("Завтрак", 8),
-    LUNCH("Обед", 13),
-    SNACK("Перекус", 16),
-    DINNER("Ужин", 19),
-    LATE_SNACK("Поздний перекус", 22);
+/**
+ * Приёмы пищи с типовым временем.
+ *
+ * Слоты намеренно разделены (второй завтрак и полдник — разные), чтобы у каждого приёма
+ * было своё настраиваемое время и понятная подпись в плане на день.
+ */
+enum class MealSlot(val title: String, val short: String, val defaultHour: Int) {
+    BREAKFAST("Завтрак", "Завтрак", 8),
+    SECOND_BREAKFAST("Второй завтрак", "2-й завтрак", 11),
+    LUNCH("Обед", "Обед", 13),
+    SNACK("Полдник", "Полдник", 16),
+    DINNER("Ужин", "Ужин", 19),
+    LATE_SNACK("Перед сном", "Перед сном", 21);
 
     companion object {
         fun forHour(hour: Int): MealSlot = when {
-            hour < 11 -> BREAKFAST
+            hour < 10 -> BREAKFAST
+            hour < 12 -> SECOND_BREAKFAST
             hour < 15 -> LUNCH
             hour < 18 -> SNACK
             hour < 21 -> DINNER

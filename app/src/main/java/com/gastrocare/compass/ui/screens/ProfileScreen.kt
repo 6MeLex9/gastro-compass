@@ -21,8 +21,10 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -31,6 +33,7 @@ import com.gastrocare.compass.domain.model.Diagnosis
 import com.gastrocare.compass.domain.model.FoodCategory
 import com.gastrocare.compass.domain.model.Goal
 import com.gastrocare.compass.domain.model.LabelInputMethod
+import com.gastrocare.compass.domain.model.MealSlot
 import com.gastrocare.compass.domain.model.RedFlag
 import com.gastrocare.compass.domain.model.Sex
 import com.gastrocare.compass.domain.model.Symptom
@@ -45,9 +48,13 @@ import com.gastrocare.compass.ui.components.SectionCard
 import com.gastrocare.compass.ui.components.SelectablePill
 import com.gastrocare.compass.ui.components.TextInputField
 import com.gastrocare.compass.ui.theme.GastroColors
+import com.gastrocare.compass.util.Format
 
 @Composable
-fun ProfileScreen(onOpenLabel: () -> Unit) {
+fun ProfileScreen(
+    onOpenLabel: () -> Unit,
+    onOpenQuickPicks: () -> Unit
+) {
     val repo = LocalRepo.current
     val context = LocalContext.current
     val profile = repo.profile
@@ -67,7 +74,7 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
         )
         Spacer(Modifier.height(14.dp))
 
-        SectionCard(title = "Личные данные") {
+        SectionCard(collapsible = true, initiallyExpanded = true, title = "Личные данные") {
             TextInputField(
                 label = "Как к вам обращаться",
                 value = profile.name,
@@ -117,7 +124,7 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
         }
 
         Spacer(Modifier.height(12.dp))
-        SectionCard(title = "Активность") {
+        SectionCard(collapsible = true, initiallyExpanded = false, title = "Активность") {
             ActivityLevel.entries.forEach { level ->
                 SelectablePill(
                     text = "${level.title} · ${level.hint}",
@@ -129,7 +136,7 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
         }
 
         Spacer(Modifier.height(12.dp))
-        SectionCard(title = "Цель") {
+        SectionCard(collapsible = true, initiallyExpanded = false, title = "Цель") {
             Goal.entries.forEach { goal ->
                 SelectablePill(
                     text = "${goal.title} — ${goal.description}",
@@ -141,7 +148,7 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
         }
 
         Spacer(Modifier.height(12.dp))
-        SectionCard(title = "Диагнозы и симптомы") {
+        SectionCard(collapsible = true, initiallyExpanded = false, title = "Диагнозы и симптомы") {
             val diagnoses = Diagnosis.entries.toList()
             PillMultiSelect(
                 title = "Диагнозы",
@@ -183,6 +190,8 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
 
         Spacer(Modifier.height(12.dp))
         SectionCard(
+            collapsible = true,
+            initiallyExpanded = false,
             title = "Личные триггеры",
             subtitle = "Отметьте то, после чего вам становится плохо: вес фактора вырастет в 1,6 раза"
         ) {
@@ -206,7 +215,28 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
         }
 
         Spacer(Modifier.height(12.dp))
-        SectionCard(title = "Красные флаги", subtitle = "Требуют очного обращения к врачу") {
+        SectionCard(
+            collapsible = true,
+            initiallyExpanded = false,
+            title = "Красные флаги",
+            subtitle = if (profile.redFlags.isEmpty()) {
+                "Ничего не отмечено. Раздел о признаках, при которых нужен врач, а не диета"
+            } else {
+                "Отмечено: ${profile.redFlags.size}. Это добавляет предупреждения с рекомендацией к врачу"
+            }
+        ) {
+            NoticeCard(
+                title = "На что влияют эти отметки",
+                body = "Отметка ничего не запрещает и не меняет расчёт калорий и риска. Она добавляет " +
+                    "предупреждение с прямым указанием действий — на главном экране в «Контроле безопасности», " +
+                    "в «Подсказках» и в «Предупреждениях безопасности» ниже. Смысл простой: не забыть про " +
+                    "симптом, который требует очного приёма, и не пытаться лечить его диетой.\n\n" +
+                    "Отмечайте только то, что есть на самом деле: если симптом прошёл и врач его исключил — " +
+                    "снимите отметку.",
+                icon = Icons.Filled.Info,
+                accent = GastroColors.Info
+            )
+            Spacer(Modifier.height(10.dp))
             RedFlag.entries.forEach { flag ->
                 LabeledSwitch(
                     title = flag.title,
@@ -219,10 +249,18 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
                     }
                 )
             }
+            if (profile.redFlags.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Активные отметки: " + profile.redFlags.joinToString(", ") { it.title.lowercase() },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GastroColors.Avoid
+                )
+            }
         }
 
         Spacer(Modifier.height(12.dp))
-        SectionCard(title = "Режим питания") {
+        SectionCard(collapsible = true, initiallyExpanded = false, title = "Режим питания", subtitle = "Время приёмов, сон и лимит воды") {
             Text("Время отхода ко сну", style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -247,12 +285,112 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
                     )
                 }
             }
+            if (profile.mealsPerDay < profile.recommendedMealCount) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "При вашем диагнозе рекомендуется ${profile.recommendedMealCount} приёмов. " +
+                        "Выбранный режим сохранён, но порции стоит уменьшить, а перерывы держать до 4 часов.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GastroColors.Risky
+                )
+            } else {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Выбранное число приёмов используется в расчётах и в плане на день.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Text("Время приёмов пищи", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                "Эти часы показываются в плане на главном экране и используются в правилах режима.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(6.dp))
+            MealSlot.entries.forEach { slot ->
+                val hour = profile.mealHour(slot)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        slot.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = {
+                        repo.updateProfile(
+                            profile.copy(mealHours = profile.mealHours + (slot.name to ((hour + 23) % 24)))
+                        )
+                    }) { Text("−") }
+                    Text(Format.hourMinute(hour), style = MaterialTheme.typography.bodyLarge)
+                    TextButton(onClick = {
+                        repo.updateProfile(
+                            profile.copy(mealHours = profile.mealHours + (slot.name to ((hour + 1) % 24)))
+                        )
+                    }) { Text("+") }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Text("Лимит воды в день", style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(6.dp))
+            val autoWater = profile.autoWaterGoalMl
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SelectablePill(
+                    text = "Авто ($autoWater мл)",
+                    selected = profile.waterGoalMl == 0,
+                    onClick = { repo.updateProfile(profile.copy(waterGoalMl = 0)) },
+                    modifier = Modifier.weight(1f)
+                )
+                SelectablePill(
+                    text = "Свой лимит",
+                    selected = profile.waterGoalMl > 0,
+                    onClick = {
+                        repo.updateProfile(
+                            profile.copy(waterGoalMl = if (profile.waterGoalMl > 0) profile.waterGoalMl else autoWater)
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            if (profile.waterGoalMl > 0) {
+                Spacer(Modifier.height(8.dp))
+                NumberField(
+                    label = "Свой лимит воды, мл",
+                    value = profile.waterGoalMl.toString(),
+                    onValueChange = { value ->
+                        repo.updateProfile(profile.copy(waterGoalMl = value.toIntOrNull() ?: profile.waterGoalMl))
+                    }
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(1200, 1500, 1800, 2000, 2500).forEach { value ->
+                        SelectablePill(
+                            text = "$value",
+                            selected = profile.waterGoalMl == value,
+                            onClick = { repo.updateProfile(profile.copy(waterGoalMl = value)) }
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Ориентир — 30 мл на кг массы тела (${profile.weightKg.toInt()} кг → $autoWater мл). " +
+                    "При ГЭРБ воду лучше пить между приёмами пищи: большой объём во время еды растягивает желудок.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
             Spacer(Modifier.height(10.dp))
             KeyValueRow("Последний приём пищи", "${targets.lastMealHour}:00")
+            KeyValueRow("Вода в целях на день", "${targets.waterMl.toInt()} мл")
         }
 
         Spacer(Modifier.height(12.dp))
         SectionCard(
+            collapsible = true,
+            initiallyExpanded = false,
             title = "Ваши расчётные нормы",
             subtitle = "Пересчитываются автоматически при изменении профиля"
         ) {
@@ -284,7 +422,7 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
 
         if (targets.notes.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
-            SectionCard(title = "Как составлен план", subtitle = "Рекомендации под ваш набор диагнозов") {
+            SectionCard(collapsible = true, initiallyExpanded = false, title = "Как составлен план", subtitle = "Рекомендации под ваш набор диагнозов") {
                 targets.notes.forEach {
                     Text("• $it", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(6.dp))
@@ -294,7 +432,7 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
 
         if (targets.safetyWarnings.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
-            SectionCard(title = "Предупреждения безопасности") {
+            SectionCard(collapsible = true, initiallyExpanded = true, title = "Предупреждения безопасности") {
                 targets.safetyWarnings.forEach {
                     NoticeCard(
                         title = "Важно",
@@ -308,7 +446,7 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
         }
 
         Spacer(Modifier.height(12.dp))
-        SectionCard(title = "Мои продукты") {
+        SectionCard(collapsible = true, initiallyExpanded = false, title = "Мои продукты") {
             if (repo.customFoods.isEmpty()) {
                 Text(
                     "Здесь появятся продукты, которые вы создали сами: с этикетки или как своё блюдо.",
@@ -339,7 +477,7 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
         }
 
         Spacer(Modifier.height(12.dp))
-        SectionCard(title = "Данные и приватность") {
+        SectionCard(collapsible = true, initiallyExpanded = false, title = "Данные и приватность") {
             Text(
                 "Все данные хранятся только на этом устройстве в локальном хранилище приложения. " +
                     "Приложение не использует интернет, не содержит рекламы и аналитики.",
@@ -358,6 +496,16 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
                 },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Экспортировать дневник (JSON)") }
+            if (repo.hiddenInsightsCount > 0) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        repo.restoreDismissedInsights()
+                        Toast.makeText(context, "Скрытые подсказки снова показываются", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Показать скрытые подсказки (${repo.hiddenInsightsCount})") }
+            }
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
                 onClick = {
@@ -370,6 +518,30 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
 
         Spacer(Modifier.height(12.dp))
         SectionCard(
+            collapsible = true,
+            initiallyExpanded = false,
+            title = "Настройка «Быстро добавить»",
+            subtitle = "Какие продукты показывать на главном экране"
+        ) {
+            val manualCount = repo.quickPickIds.size
+            Text(
+                if (manualCount > 0) {
+                    "Выбран свой набор: $manualCount продуктов."
+                } else {
+                    "Сейчас набор подбирается автоматически — по продуктам, которые вы добавляете чаще всего."
+                },
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.height(10.dp))
+            Button(onClick = onOpenQuickPicks, modifier = Modifier.fillMaxWidth()) {
+                Text("Изменить набор продуктов")
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        SectionCard(
+            collapsible = true,
+            initiallyExpanded = false,
             title = "Способы ввода КБЖУ",
             subtitle = "Что уже работает, а что можно подключить"
         ) {
@@ -387,7 +559,7 @@ fun ProfileScreen(onOpenLabel: () -> Unit) {
         }
 
         Spacer(Modifier.height(12.dp))
-        SectionCard(title = "О приложении") {
+        SectionCard(collapsible = true, initiallyExpanded = false, title = "О приложении") {
             KeyValueRow("Версия", "1.0")
             KeyValueRow("Работает офлайн", "да")
             Spacer(Modifier.height(8.dp))

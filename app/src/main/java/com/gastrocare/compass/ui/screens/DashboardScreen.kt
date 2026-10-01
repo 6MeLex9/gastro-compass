@@ -1,6 +1,7 @@
 package com.gastrocare.compass.ui.screens
 
 import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,18 +10,24 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -41,6 +48,7 @@ import com.gastrocare.compass.ui.components.SectionCard
 import com.gastrocare.compass.ui.components.SelectablePill
 import com.gastrocare.compass.ui.components.StatTile
 import com.gastrocare.compass.ui.theme.GastroColors
+import com.gastrocare.compass.util.Format
 import java.util.Calendar
 
 @Composable
@@ -48,7 +56,8 @@ fun DashboardScreen(
     onAddFood: () -> Unit,
     onScanLabel: () -> Unit,
     onSymptoms: () -> Unit,
-    onOpenAdvice: () -> Unit
+    onOpenAdvice: () -> Unit,
+    onEditQuickPicks: () -> Unit
 ) {
     val repo = LocalRepo.current
     val context = LocalContext.current
@@ -57,7 +66,10 @@ fun DashboardScreen(
     val consumed = today.totals
     val contextRisk = repo.riskContext()
     val checks = remember(today, targets) { repo.calculator.dailyChecks(repo.profile, targets, today) }
-    val insights = remember(today, targets) { repo.insights() }
+    val insights = remember(today, targets, repo.hiddenInsightsCount) { repo.insights() }
+
+    // Продукт, выбранный в «Быстро добавить»: сначала подтверждение, потом запись в дневник.
+    var pendingQuickAdd by remember { mutableStateOf<com.gastrocare.compass.domain.model.FoodItem?>(null) }
 
     Column(
         Modifier
@@ -173,47 +185,131 @@ fun DashboardScreen(
         }
 
         Spacer(Modifier.height(12.dp))
-        SectionCard(title = "Быстро добавить") {
-            val quick = remember { com.gastrocare.compass.data.FoodRepository.quickPicks(repo.foods) }
+        SectionCard(
+            title = "Быстро добавить",
+            subtitle = if (repo.quickPickIds.isEmpty()) {
+                "Набор подбирается по вашим записям — его можно настроить"
+            } else {
+                "Ваш набор продуктов"
+            },
+            trailing = {
+                Text(
+                    "Изменить",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clickable { onEditQuickPicks() }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        ) {
+            val quick = repo.quickPicks(limit = 8)
+            if (quick.isEmpty()) {
+                Text(
+                    "Добавьте продукты, которые едите чаще всего, и они появятся здесь в один тап.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
             quick.chunked(2).forEach { rowFoods ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     rowFoods.forEach { food ->
                         SelectablePill(
                             text = food.name,
                             selected = false,
-                            onClick = {
-                                val grams = food.typicalPortionG.toDouble()
-                                val assessment = repo.engine.assess(food, grams, repo.profile, repo.riskContext())
-                                repo.addEntry(
-                                    DiaryEntry(
-                                        foodId = food.id,
-                                        foodName = food.name,
-                                        grams = grams,
-                                        nutrition = food.nutritionFor(grams),
-                                        slot = MealSlot.forHour(Calendar.getInstance().get(Calendar.HOUR_OF_DAY)),
-                                        timestamp = System.currentTimeMillis(),
-                                        riskScore = assessment.score,
-                                        riskLevel = assessment.level,
-                                        factors = food.factors.map { it.tag }
-                                    )
-                                )
-                                Toast.makeText(
-                                    context,
-                                    "${food.name}: ${assessment.level.title} (риск ${assessment.score}/100)",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            },
+                            onClick = { pendingQuickAdd = food },
                             modifier = Modifier.weight(1f).padding(bottom = 6.dp)
                         )
                     }
                     if (rowFoods.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "Нажатие просит подтверждение — случайное добавление исключено.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        // Подтверждение быстрого добавления: раньше продукт попадал в дневник сразу,
+        // и случайное нажатие искажало статистику.
+        val quickCandidate = pendingQuickAdd
+        if (quickCandidate != null) {
+            val grams = quickCandidate.typicalPortionG.toDouble()
+            val assessment = remember(quickCandidate.id) {
+                repo.engine.assess(quickCandidate, grams, repo.profile, repo.riskContext())
+            }
+            val nutrition = quickCandidate.nutritionFor(grams)
+            AlertDialog(
+                onDismissRequest = { pendingQuickAdd = null },
+                title = { Text("Добавить в дневник?") },
+                text = {
+                    Column {
+                        Text(
+                            "${quickCandidate.name}, ${grams.toInt()} г — ${nutrition.calories.toInt()} ккал",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Б ${nutrition.protein.toInt()} · Ж ${nutrition.fat.toInt()} · " +
+                                "У ${nutrition.carbs.toInt()} г",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RiskBadge(assessment.level, assessment.score)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (assessment.score >= 50) "Лучше заменить или уменьшить порцию"
+                                else "Можно добавить",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Приём: ${MealSlot.forHour(Calendar.getInstance().get(Calendar.HOUR_OF_DAY)).title}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        repo.addEntry(
+                            DiaryEntry(
+                                foodId = quickCandidate.id,
+                                foodName = quickCandidate.name,
+                                grams = grams,
+                                nutrition = nutrition,
+                                slot = MealSlot.forHour(Calendar.getInstance().get(Calendar.HOUR_OF_DAY)),
+                                timestamp = System.currentTimeMillis(),
+                                riskScore = assessment.score,
+                                riskLevel = assessment.level,
+                                factors = quickCandidate.factors.map { it.tag }
+                            )
+                        )
+                        Toast.makeText(
+                            context,
+                            "${quickCandidate.name}: ${assessment.level.title}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        pendingQuickAdd = null
+                    }) { Text("Добавить") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingQuickAdd = null }) { Text("Отмена") }
+                }
+            )
         }
 
         if (insights.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
-            SectionCard(title = "Подсказки для вас", subtitle = "Формируются по вашему дневнику и диагнозу") {
+            SectionCard(
+                title = "Подсказки для вас",
+                subtitle = "Формируются по вашему дневнику и диагнозу. «Понятно» скрывает подсказку на неделю"
+            ) {
                 insights.take(3).forEach { insight ->
                     NoticeCard(
                         title = insight.title,
@@ -224,8 +320,8 @@ fun DashboardScreen(
                             Severity.WARNING -> GastroColors.Risky
                             else -> GastroColors.Info
                         },
-                        action = insight.action?.let { "Понятно" },
-                        onAction = { }
+                        action = "Понятно",
+                        onAction = { repo.dismissInsight(insight.key) }
                     )
                     Spacer(Modifier.height(8.dp))
                 }
@@ -238,28 +334,30 @@ fun DashboardScreen(
         }
 
         Spacer(Modifier.height(12.dp))
-        SectionCard(title = "План приёмов на день", subtitle = "Распределение нормы, чтобы не съесть всё вечером") {
-            val plan = repo.calculator.mealPlan(targets)
-            plan.forEachIndexed { index, (name, kcal) ->
-                val slot = when {
-                    name.startsWith("Завтрак") -> MealSlot.BREAKFAST
-                    name.startsWith("Обед") -> MealSlot.LUNCH
-                    name.startsWith("Ужин") -> MealSlot.DINNER
-                    name.startsWith("Перед сном") -> MealSlot.LATE_SNACK
-                    else -> MealSlot.SNACK
-                }
-                val actual = today.entriesFor(slot).sumOf { it.calories }
+        SectionCard(
+            title = "План приёмов на день",
+            subtitle = "Часы можно изменить в профиле, раздел «Режим питания»"
+        ) {
+            val plan = repo.calculator.mealPlan(repo.profile, targets)
+            plan.forEachIndexed { index, meal ->
+                val actual = today.entriesFor(meal.slot).sumOf { it.calories }
                 KeyValueRow(
-                    key = name,
-                    value = "${actual.toInt()} / ${kcal.toInt()} ккал",
-                    valueColor = if (actual > kcal * 1.15) GastroColors.Risky else MaterialTheme.colorScheme.onSurface
+                    key = "${Format.hourMinute(meal.hour)} · ${meal.title}",
+                    value = "${actual.toInt()} / ${meal.calories.toInt()} ккал",
+                    valueColor = if (actual > meal.calories * 1.15) GastroColors.Risky
+                    else MaterialTheme.colorScheme.onSurface
                 )
                 if (index < plan.lastIndex) Spacer(Modifier.height(2.dp))
             }
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 RiskBadge(level = RiskLevel.fromScore(today.averageRisk), score = today.averageRisk)
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Последний приём — до ${targets.lastMealHour}:00",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 

@@ -343,6 +343,7 @@ enum class Symptom(val title: String, val short: String, val severityWeight: Dou
     NAUSEA("Тошнота", "Тошнота", 0.8),
     BELCHING("Отрыжка воздухом", "Отрыжка", 0.5),
     NIGHT_COUGH("Ночной кашель, охриплость, першение", "Ночной кашель", 0.9),
+    GLOBE("Ком в горле, ощущение сдавливания (globus)", "Ком в горле", 0.85),
     BITTER_TASTE("Горечь во рту", "Горечь", 0.6),
     DIARRHEA("Диарея", "Диарея", 0.7),
     CONSTIPATION("Запор", "Запор", 0.4),
@@ -386,8 +387,15 @@ data class UserProfile(
     val lowFodmap: Boolean = false,
     /** Время отхода ко сну, часы (0–23). Используется для правила «последний приём за 3 часа». */
     val sleepHour: Int = 23,
-    /** Обычное число приёмов пищи в день. */
+    /** Обычное число приёмов пищи в день. Именно это значение используется в расчётах. */
     val mealsPerDay: Int = 5,
+    /**
+     * Время приёмов пищи по слотам (ключ — имя [MealSlot]). Пусто — используются типовые часы
+     * из [MealSlot.defaultHour].
+     */
+    val mealHours: Map<String, Int> = emptyMap(),
+    /** Личный лимит воды в миллилитрах. 0 — рассчитывать автоматически по массе тела. */
+    val waterGoalMl: Int = 0,
     /**
      * Ручная поправка калорийности (ккал), которую пользователь применяет по итогам
      * недельного тренда веса. Всегда ограничивается безопасным «полом» калорий.
@@ -396,6 +404,30 @@ data class UserProfile(
     val redFlags: Set<RedFlag> = emptySet(),
     val onboarded: Boolean = false
 ) {
+    /** Время конкретного приёма пищи: пользовательское или типовое. */
+    fun mealHour(slot: MealSlot): Int = mealHours[slot.name] ?: slot.defaultHour
+
+    /**
+     * Сколько приёмов рекомендует диагноз. Нужно, чтобы не запрещать пользователю свой режим,
+     * но предупредить, если он выбрал заметно меньше рекомендованного.
+     */
+    val recommendedMealCount: Int
+        get() = when {
+            diagnoses.contains(Diagnosis.GERD) || diagnoses.contains(Diagnosis.HERNIA) -> 6
+            diagnoses.contains(Diagnosis.PANCREATITIS) -> 6
+            diagnoses.contains(Diagnosis.ULCER) || diagnoses.contains(Diagnosis.GASTRITIS_HIGH) -> 5
+            diagnoses.contains(Diagnosis.NO_DIAGNOSIS) -> 4
+            else -> 5
+        }
+
+    /** Автоматический лимит воды: 30 мл на кг массы тела в пределах разумного коридора. */
+    val autoWaterGoalMl: Int
+        get() = (weightKg * 30).toInt().coerceIn(1200, 2500)
+
+    /** Итоговый лимит воды с учётом личной настройки. */
+    val effectiveWaterGoalMl: Int
+        get() = if (waterGoalMl > 0) waterGoalMl else autoWaterGoalMl
+
     val bmi: Double get() = weightKg / ((heightCm / 100.0) * (heightCm / 100.0))
 
     val bmiCategory: String

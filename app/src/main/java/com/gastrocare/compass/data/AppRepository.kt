@@ -3,6 +3,7 @@ package com.gastrocare.compass.data
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.gastrocare.compass.domain.engine.Insight
@@ -53,6 +54,87 @@ class AppRepository(context: Context) {
         val loaded = loadCustomFoods()
         it.addAll(loaded)
         foods.loadCustom(loaded)
+    }
+
+    /** Ручной набор для «Быстро добавить». Пусто — набор подбирается автоматически. */
+    val quickPickIds = mutableStateListOf<String>().also { it.addAll(loadQuickPicks()) }
+
+    /** Скрытые пользователем подсказки: ключ → момент скрытия. */
+    private val dismissedInsights = mutableStateMapOf<String, Long>().also {
+        it.putAll(loadDismissedInsights())
+    }
+
+    // ------------------------------------------------------------------ «Быстро добавить»
+
+    fun setQuickPicks(ids: List<String>) {
+        val unique = ids.distinct()
+        quickPickIds.clear()
+        quickPickIds.addAll(unique)
+        prefs.edit().putString(KEY_QUICK_PICKS, JSONArray(unique).toString()).apply()
+    }
+
+    fun addQuickPick(foodId: String) {
+        if (!quickPickIds.contains(foodId)) setQuickPicks(quickPickIds + foodId)
+    }
+
+    fun removeQuickPick(foodId: String) {
+        setQuickPicks(quickPickIds - foodId)
+    }
+
+    /** Возвращает автоматический подбор (частые из дневника, затем справочник). */
+    fun resetQuickPicks() {
+        quickPickIds.clear()
+        prefs.edit().remove(KEY_QUICK_PICKS).apply()
+    }
+
+    /** Продукты, которые пользователь добавляет чаще всего. */
+    fun frequentFoods(limit: Int = 8): List<FoodItem> =
+        diary.groupingBy { it.foodId }.eachCount().entries
+            .sortedByDescending { it.value }
+            .mapNotNull { foods.byId(it.key) }
+            .take(limit)
+
+    /**
+     * Итоговый набор «Быстро добавить»: сначала ручной выбор пользователя,
+     * иначе — самые частые продукты из его дневника, иначе — стартовый набор.
+     */
+    fun quickPicks(limit: Int = 6): List<FoodItem> {
+        val manual = quickPickIds.mapNotNull { foods.byId(it) }
+        if (manual.isNotEmpty()) return manual.take(limit)
+
+        val frequent = frequentFoods(limit)
+        if (frequent.isNotEmpty()) return frequent
+
+        return FoodRepository.quickPicks(foods).take(limit)
+    }
+
+    // ------------------------------------------------------------------ скрытые подсказки
+
+    /** Скрыть подсказку по кнопке «Понятно». Держим скрытой неделю, затем показываем снова. */
+    fun dismissInsight(key: String) {
+        dismissedInsights[key] = System.currentTimeMillis()
+        persistDismissedInsights()
+    }
+
+    fun restoreDismissedInsights() {
+        dismissedInsights.clear()
+        persistDismissedInsights()
+    }
+
+    val hiddenInsightsCount: Int get() = activeDismissedKeys().size
+
+    private fun activeDismissedKeys(now: Long = System.currentTimeMillis()): Set<String> =
+        dismissedInsights.filterValues { now - it < INSIGHT_HIDE_TTL_MS }.keys
+
+    private fun loadDismissedInsights(): Map<String, Long> = runCatching {
+        val obj = JSONObject(prefs.getString(KEY_DISMISSED_INSIGHTS, "{}") ?: "{}")
+        obj.keys().asSequence().associateWith { obj.optLong(it, 0L) }
+    }.getOrDefault(emptyMap())
+
+    private fun persistDismissedInsights() {
+        val obj = JSONObject()
+        dismissedInsights.forEach { (key, time) -> obj.put(key, time) }
+        prefs.edit().putString(KEY_DISMISSED_INSIGHTS, obj.toString()).apply()
     }
 
     // ------------------------------------------------------------------ производные данные
@@ -110,13 +192,16 @@ class AppRepository(context: Context) {
         )
     }
 
-    fun insights(): List<Insight> = insightEngine.all(
-        profile = profile,
-        targets = targets,
-        today = today(),
-        history = history(21),
-        weights = weights.toList()
-    )
+    fun insights(): List<Insight> {
+        val hidden = activeDismissedKeys()
+        return insightEngine.all(
+            profile = profile,
+            targets = targets,
+            today = today(),
+            history = history(21),
+            weights = weights.toList()
+        ).filterNot { it.key in hidden }
+    }
 
     // ------------------------------------------------------------------ изменения
 
@@ -237,6 +322,8 @@ class AppRepository(context: Context) {
         put("lowFodmap", p.lowFodmap)
         put("sleepHour", p.sleepHour)
         put("mealsPerDay", p.mealsPerDay)
+        put("mealHours", JSONObject().apply { p.mealHours.forEach { (slot, hour) -> put(slot, hour) } })
+        put("waterGoalMl", p.waterGoalMl)
         put("calorieAdjustment", p.calorieAdjustment)
         put("redFlags", JSONArray(p.redFlags.map { it.name }))
         put("onboarded", p.onboarded)
@@ -266,6 +353,13 @@ class AppRepository(context: Context) {
                 lowFodmap = o.optBoolean("lowFodmap", false),
                 sleepHour = o.optInt("sleepHour", 23),
                 mealsPerDay = o.optInt("mealsPerDay", 5),
+                mealHours = runCatching {
+                    val hours = o.optJSONObject("mealHours") ?: JSONObject()
+                    hours.keys().asSequence()
+                        .filter { key -> com.gastrocare.compass.domain.model.MealSlot.entries.any { it.name == key } }
+                        .associateWith { key -> hours.optInt(key, 0) }
+                }.getOrDefault(emptyMap()),
+                waterGoalMl = o.optInt("waterGoalMl", 0),
                 calorieAdjustment = o.optDouble("calorieAdjustment", 0.0),
                 redFlags = enumSet(o.optJSONArray("redFlags"), RedFlag.entries.toList()),
                 onboarded = o.optBoolean("onboarded", false)
@@ -445,6 +539,11 @@ class AppRepository(context: Context) {
         (0 until arr.length()).mapNotNull { foodFromJson(arr.optJSONObject(it) ?: return@mapNotNull null) }
     }.getOrDefault(emptyList())
 
+    private fun loadQuickPicks(): List<String> = runCatching {
+        val arr = JSONArray(prefs.getString(KEY_QUICK_PICKS, "[]") ?: "[]")
+        (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotBlank() }
+    }.getOrDefault(emptyList())
+
     private fun persistDiary() {
         prefs.edit().putString(KEY_DIARY, JSONArray().apply { diary.forEach { put(entryToJson(it)) } }.toString()).apply()
     }
@@ -469,5 +568,10 @@ class AppRepository(context: Context) {
         const val KEY_SYMPTOMS = "symptoms"
         const val KEY_WEIGHTS = "weights"
         const val KEY_CUSTOM_FOODS = "custom_foods"
+        const val KEY_QUICK_PICKS = "quick_picks"
+        const val KEY_DISMISSED_INSIGHTS = "dismissed_insights"
+
+        /** Скрытая подсказка возвращается через неделю — данные за это время успевают измениться. */
+        const val INSIGHT_HIDE_TTL_MS = 7L * 24 * 60 * 60 * 1000
     }
 }

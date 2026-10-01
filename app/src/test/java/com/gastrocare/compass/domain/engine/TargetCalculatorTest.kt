@@ -133,11 +133,65 @@ class TargetCalculatorTest {
 
     @Test
     fun `план приёмов распределяет норму полностью`() {
-        val targets = calculator.calculate(profile())
-        val plan = calculator.mealPlan(targets)
+        val p = profile()
+        val targets = calculator.calculate(p)
+        val plan = calculator.mealPlan(p, targets)
 
         assertEquals(targets.mealCount, plan.size)
-        assertEquals(targets.calories, plan.sumOf { it.second }, 1.0)
+        assertEquals(targets.calories, plan.sumOf { it.calories }, 1.0)
+        assertTrue("у каждого приёма должно быть время", plan.all { it.hour in 0..23 })
+    }
+
+    @Test
+    fun `выбор числа приёмов уважается даже при ГЭРБ`() {
+        val p = profile(diagnoses = setOf(Diagnosis.GERD)).copy(mealsPerDay = 4)
+        val targets = calculator.calculate(p)
+
+        assertEquals(
+            "ранее выбор игнорировался и всегда подставлялось 6 приёмов",
+            4, targets.mealCount
+        )
+        assertTrue(
+            "должно быть предупреждение о крупных порциях",
+            targets.safetyWarnings.any { it.contains("приёмов пищи", ignoreCase = true) }
+        )
+        assertTrue(targets.notes.any { it.contains("рекомендуется") })
+    }
+
+    @Test
+    fun `шесть приёмов при ГЭРБ не вызывают предупреждений`() {
+        val p = profile(diagnoses = setOf(Diagnosis.GERD)).copy(mealsPerDay = 6)
+        val targets = calculator.calculate(p)
+
+        assertEquals(6, targets.mealCount)
+        assertTrue(targets.safetyWarnings.none { it.contains("приёмов пищи", ignoreCase = true) })
+    }
+
+    @Test
+    fun `личный лимит воды переопределяет автоматический`() {
+        val auto = calculator.calculate(profile())
+        val manual = calculator.calculate(profile().copy(waterGoalMl = 2500))
+
+        assertEquals(2500.0, manual.waterMl, 0.1)
+        assertTrue(auto.waterMl >= 1200.0 && auto.waterMl <= 2500.0)
+        assertTrue(manual.notes.any { it.contains("Личный лимит воды") })
+    }
+
+    @Test
+    fun `время приёмов берётся из профиля`() {
+        val p = profile().copy(mealHours = mapOf("BREAKFAST" to 7, "DINNER" to 18))
+        val targets = calculator.calculate(p)
+        val plan = calculator.mealPlan(p, targets)
+
+        assertEquals(7, plan.first { it.slot == com.gastrocare.compass.domain.model.MealSlot.BREAKFAST }.hour)
+        assertEquals(18, plan.first { it.slot == com.gastrocare.compass.domain.model.MealSlot.DINNER }.hour)
+    }
+
+    @Test
+    fun `новый симптом ком в горле усиливает риск`() {
+        val symptom = com.gastrocare.compass.domain.model.Symptom.GLOBE
+        assertTrue(symptom.severityWeight > 0.5)
+        assertTrue(symptom.title.contains("Ком в горле"))
     }
 
     @Test

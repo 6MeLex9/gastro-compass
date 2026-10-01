@@ -40,6 +40,7 @@ import com.gastrocare.compass.ui.screens.DiaryScreen
 import com.gastrocare.compass.ui.screens.LabelScreen
 import com.gastrocare.compass.ui.screens.OnboardingScreen
 import com.gastrocare.compass.ui.screens.ProfileScreen
+import com.gastrocare.compass.ui.screens.QuickPicksScreen
 import com.gastrocare.compass.ui.screens.RecipeScreen
 import com.gastrocare.compass.ui.screens.SymptomScreen
 import com.gastrocare.compass.ui.theme.GastroCompassTheme
@@ -58,6 +59,7 @@ sealed class Screen(val title: String) {
     data object Label : Screen("КБЖУ по этикетке")
     data object Recipe : Screen("Своё блюдо")
     data object Symptoms : Screen("Симптомы")
+    data object QuickPicks : Screen("Быстрое добавление")
 }
 
 private data class NavState(
@@ -120,7 +122,8 @@ private fun MainNavigation() {
                     onAddFood = { nav = nav.push(Screen.AddFood) },
                     onScanLabel = { nav = nav.push(Screen.Label) },
                     onSymptoms = { nav = nav.push(Screen.Symptoms) },
-                    onOpenAdvice = { nav = nav.selectTab(Screen.Advice) }
+                    onOpenAdvice = { nav = nav.selectTab(Screen.Advice) },
+                    onEditQuickPicks = { nav = nav.push(Screen.QuickPicks) }
                 )
 
                 Screen.Diary -> DiaryScreen(
@@ -135,7 +138,10 @@ private fun MainNavigation() {
 
                 Screen.Analytics -> AnalyticsScreen()
 
-                Screen.Profile -> ProfileScreen(onOpenLabel = { nav = nav.push(Screen.Label) })
+                Screen.Profile -> ProfileScreen(
+                    onOpenLabel = { nav = nav.push(Screen.Label) },
+                    onOpenQuickPicks = { nav = nav.push(Screen.QuickPicks) }
+                )
 
                 Screen.AddFood -> AddFoodScreen(
                     onDone = { nav = nav.pop() },
@@ -151,6 +157,8 @@ private fun MainNavigation() {
                 Screen.Recipe -> RecipeScreen(onBack = { nav = nav.pop() })
 
                 Screen.Symptoms -> SymptomScreen(onBack = { nav = nav.pop() })
+
+                Screen.QuickPicks -> QuickPicksScreen(onBack = { nav = nav.pop() })
             }
         }
     }

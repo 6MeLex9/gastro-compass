@@ -51,7 +51,9 @@ fun AdviceScreen(
     val repo = LocalRepo.current
     val profile = repo.profile
     val targets = repo.targets
-    val insights = remember(repo.diary.size, repo.symptoms.size, repo.weights.size) { repo.insights() }
+    val insights = remember(repo.diary.size, repo.symptoms.size, repo.weights.size, repo.hiddenInsightsCount) {
+        repo.insights()
+    }
 
     Column(
         Modifier
@@ -233,6 +235,7 @@ private fun StopListCard() {
 
 @Composable
 private fun InsightCard(insight: Insight, onAddTrigger: (TriggerTag) -> Unit) {
+    val repo = LocalRepo.current
     val accent = when (insight.severity) {
         Severity.ERROR -> GastroColors.Avoid
         Severity.WARNING -> GastroColors.Risky
@@ -242,6 +245,9 @@ private fun InsightCard(insight: Insight, onAddTrigger: (TriggerTag) -> Unit) {
             else -> GastroColors.Info
         }
     }
+    // Если подсказка предлагает действие (добавить личный триггер) — показываем его.
+    // Иначе кнопка «Понятно» скрывает подсказку на неделю.
+    val trigger = insight.suggestedTrigger
     NoticeCard(
         title = "${insight.kind.title}: ${insight.title}",
         body = insight.body + (insight.action?.let { "\n\nЧто делать: $it" } ?: ""),
@@ -251,7 +257,9 @@ private fun InsightCard(insight: Insight, onAddTrigger: (TriggerTag) -> Unit) {
             else -> Icons.Filled.CheckCircle
         },
         accent = accent,
-        action = insight.suggestedTrigger?.let { "Добавить «${it.title}» в личные триггеры" },
-        onAction = insight.suggestedTrigger?.let { tag -> { onAddTrigger(tag) } }
+        action = if (trigger != null) "Добавить «${trigger.title}» в личные триггеры" else "Понятно",
+        onAction = {
+            if (trigger != null) onAddTrigger(trigger) else repo.dismissInsight(insight.key)
+        }
     )
 }

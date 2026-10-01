@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -23,6 +26,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,14 +45,33 @@ import androidx.compose.ui.unit.dp
 import com.gastrocare.compass.domain.model.RiskLevel
 import com.gastrocare.compass.ui.theme.GastroColors
 
-/** Карточка-раздел с заголовком и подписью. */
+/**
+ * Карточка-раздел с заголовком и подписью.
+ *
+ * @param collapsible если true, содержимое можно свернуть нажатием на заголовок —
+ *        это экономит место в длинных разделах (профиль, подсказки)
+ * @param initiallyExpanded начальное состояние для сворачиваемых карточек
+ * @param trailing дополнительный элемент в заголовке (например, кнопка «Изменить»)
+ */
 @Composable
 fun SectionCard(
     title: String? = null,
     subtitle: String? = null,
     modifier: Modifier = Modifier,
+    collapsible: Boolean = false,
+    initiallyExpanded: Boolean = true,
+    trailing: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
+    var expanded by rememberSaveable(title) { mutableStateOf(!collapsible || initiallyExpanded) }
+    val headerModifier = if (collapsible) {
+        Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded }
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -54,18 +80,41 @@ fun SectionCard(
     ) {
         Column(Modifier.padding(16.dp)) {
             if (title != null) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-            }
-            if (subtitle != null) {
-                Spacer(Modifier.height(4.dp))
+                Row(headerModifier, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(title, style = MaterialTheme.typography.titleMedium)
+                        if (subtitle != null && (!collapsible || expanded)) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    trailing?.invoke()
+                    if (collapsible) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            imageVector = if (expanded) Icons.Filled.KeyboardArrowUp
+                            else Icons.Filled.KeyboardArrowDown,
+                            contentDescription = if (expanded) "Свернуть" else "Развернуть",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else if (subtitle != null) {
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            if (title != null || subtitle != null) Spacer(Modifier.height(12.dp))
-            content()
+
+            if (!collapsible || expanded) {
+                if (title != null || subtitle != null) Spacer(Modifier.height(12.dp))
+                content()
+            }
         }
     }
 }
