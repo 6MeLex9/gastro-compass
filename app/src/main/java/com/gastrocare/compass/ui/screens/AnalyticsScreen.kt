@@ -222,6 +222,10 @@ fun AnalyticsScreen() {
             KeyValueRow("Дней в целевом коридоре", "$withinRange из $weeksTracked")
             KeyValueRow("Средняя калорийность", "${avgCalories.toInt()} ккал")
             KeyValueRow("Отклонение от нормы", "${(avgCalories - targets.calories).toInt()} ккал")
+            KeyValueRow(
+                "Вода в среднем",
+                "${repo.averageWaterMl(7).toInt()} мл из ${targets.waterMl.toInt()} мл"
+            )
             Spacer(Modifier.height(8.dp))
             val adherence = insights.firstOrNull { it.kind == InsightKind.ADHERENCE }
             if (adherence != null) {

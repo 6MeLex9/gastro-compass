@@ -21,6 +21,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,6 +44,7 @@ import com.gastrocare.compass.ui.components.CalorieRing
 import com.gastrocare.compass.ui.components.KeyValueRow
 import com.gastrocare.compass.ui.components.MacroBar
 import com.gastrocare.compass.ui.components.NoticeCard
+import com.gastrocare.compass.ui.components.NumberField
 import com.gastrocare.compass.ui.components.RiskBadge
 import com.gastrocare.compass.ui.components.SectionCard
 import com.gastrocare.compass.ui.components.SelectablePill
@@ -57,7 +59,8 @@ fun DashboardScreen(
     onScanLabel: () -> Unit,
     onSymptoms: () -> Unit,
     onOpenAdvice: () -> Unit,
-    onEditQuickPicks: () -> Unit
+    onEditQuickPicks: () -> Unit,
+    onOpenAnalytics: () -> Unit
 ) {
     val repo = LocalRepo.current
     val context = LocalContext.current
@@ -133,6 +136,9 @@ fun DashboardScreen(
         }
 
         Spacer(Modifier.height(12.dp))
+        WaterCard()
+
+        Spacer(Modifier.height(12.dp))
         SectionCard(title = "Быстрые действия") {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onAddFood, modifier = Modifier.weight(1f)) { Text("Еда") }
@@ -141,7 +147,11 @@ fun DashboardScreen(
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onClick = onSymptoms, modifier = Modifier.weight(1f)) { Text("Симптом") }
-                FilledTonalButton(onClick = onOpenAdvice, modifier = Modifier.weight(1f)) { Text("Подсказки") }
+                FilledTonalButton(onClick = onOpenAnalytics, modifier = Modifier.weight(1f)) { Text("Анализ") }
+            }
+            Spacer(Modifier.height(8.dp))
+            FilledTonalButton(onClick = onOpenAdvice, modifier = Modifier.fillMaxWidth()) {
+                Text("Подсказки и стоп-лист")
             }
         }
 
@@ -379,3 +389,117 @@ fun DashboardScreen(
 
 /** Используется в других экранах для отображения «съедено/цель» по макронутриенту. */
 internal fun MacroKind.label(): String = title
+
+/**
+ * Вода: выпито относительно личного лимита и быстрое добавление объёма.
+ *
+ * Журнал воды ведётся отдельно от еды, потому что при ГЭРБ важны и количество,
+ * и время: пить лучше между приёмами пищи, а не во время еды.
+ */
+@Composable
+private fun WaterCard() {
+    val repo = LocalRepo.current
+    val goal = repo.targets.waterMl
+    val drunk = repo.waterTodayMl
+    var customOpen by remember { mutableStateOf(false) }
+    var customAmount by remember { mutableStateOf("") }
+
+    SectionCard(
+        title = "Вода за день",
+        subtitle = "Пейте между приёмами пищи: большой объём во время еды растягивает желудок",
+        trailing = {
+            Text(
+                "${drunk.toInt()} / ${goal.toInt()} мл",
+                style = MaterialTheme.typography.titleMedium,
+                color = if (drunk >= goal) GastroColors.Safe else MaterialTheme.colorScheme.primary
+            )
+        }
+    ) {
+        MacroBar("Выпито", drunk, goal, GastroColors.Info, unit = "мл")
+        Spacer(Modifier.height(8.dp))
+        Text(
+            if (drunk >= goal) {
+                "Дневная норма воды выполнена. Лимит можно изменить в профиле."
+            } else {
+                "Осталось ${(goal - drunk).toInt()} мл. Лимит можно изменить в профиле, " +
+                    "раздел «Режим питания»."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(Modifier.height(12.dp))
+        Text("Добавить воды", style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(150, 200, 250, 300, 500).forEach { ml ->
+                SelectablePill(
+                    text = "+$ml",
+                    selected = false,
+                    onClick = { repo.addWater(ml.toDouble()) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(onClick = { customOpen = true }, modifier = Modifier.weight(1f)) {
+                Text("Другой объём")
+            }
+            if (drunk > 0) {
+                OutlinedButton(onClick = { repo.removeLastWater() }, modifier = Modifier.weight(1f)) {
+                    Text("Отменить последнее")
+                }
+            }
+        }
+
+        val today = repo.waterEntriesToday()
+        if (today.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Сегодня: " + today.joinToString(", ") {
+                    "${Format.timeOfDay(it.timestamp)} — ${it.ml.toInt()} мл"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    if (customOpen) {
+        AlertDialog(
+            onDismissRequest = { customOpen = false },
+            title = { Text("Сколько воды выпили?") },
+            text = {
+                Column {
+                    NumberField(
+                        label = "Объём, мл",
+                        value = customAmount,
+                        onValueChange = { customAmount = it }
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(100, 250, 500, 750).forEach { ml ->
+                            SelectablePill(
+                                text = "$ml",
+                                selected = customAmount == ml.toString(),
+                                onClick = { customAmount = ml.toString() },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    customAmount.toIntOrNull()?.let { repo.addWater(it.toDouble()) }
+                    customAmount = ""
+                    customOpen = false
+                }) { Text("Добавить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { customOpen = false }) { Text("Отмена") }
+            }
+        )
+    }
+}

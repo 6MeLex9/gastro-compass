@@ -334,20 +334,90 @@ enum class Diagnosis(
     val hasHardBans: Boolean get() = hardBans.isNotEmpty()
 }
 
-/** Симптомы: используются как усилители риска и как метрика прогресса. */
-enum class Symptom(val title: String, val short: String, val severityWeight: Double) {
-    HEARTBURN("Изжога / жжение за грудиной", "Изжога", 1.0),
-    REGURGITATION("Кислая отрыжка, регургитация", "Регургитация", 0.95),
-    EPIGASTRIC_PAIN("Боль или жжение в подложечной области", "Боль", 1.0),
-    BLOATING("Вздутие, распирание", "Вздутие", 0.7),
-    NAUSEA("Тошнота", "Тошнота", 0.8),
-    BELCHING("Отрыжка воздухом", "Отрыжка", 0.5),
-    NIGHT_COUGH("Ночной кашель, охриплость, першение", "Ночной кашель", 0.9),
-    GLOBE("Ком в горле, ощущение сдавливания (globus)", "Ком в горле", 0.85),
-    BITTER_TASTE("Горечь во рту", "Горечь", 0.6),
-    DIARRHEA("Диарея", "Диарея", 0.7),
-    CONSTIPATION("Запор", "Запор", 0.4),
-    EARLY_SATIETY("Быстрое насыщение, тяжесть", "Тяжесть", 0.6)
+/**
+ * Симптомы. Используются как усилители риска и как метрика прогресса.
+ *
+ * @param boosts факторы, которые этот симптом делает опаснее: отмеченный симптом поднимает
+ *        вес этих факторов в оценке продуктов (например, при вздутии опаснее FODMAP и газ)
+ * @param advice короткий практический совет, который показывается в подсказках и профиле
+ */
+enum class Symptom(
+    val title: String,
+    val short: String,
+    val severityWeight: Double,
+    val boosts: Set<TriggerTag> = emptySet(),
+    val advice: String = ""
+) {
+    HEARTBURN(
+        "Изжога / жжение за грудиной", "Изжога", 1.0,
+        boosts = setOf(TriggerTag.ACID, TriggerTag.FAT, TriggerTag.CITRUS, TriggerTag.TOMATO, TriggerTag.LATE_MEAL, TriggerTag.VOLUME),
+        advice = "Не ложитесь в течение 3 часов после еды, поднимите изголовье кровати на 15–20 см, " +
+            "держите порцию до 300 г и жир до 15 г за приём."
+    ),
+    REGURGITATION(
+        "Кислая отрыжка, регургитация", "Регургитация", 0.95,
+        boosts = setOf(TriggerTag.VOLUME, TriggerTag.FAT, TriggerTag.CARBONATED, TriggerTag.LATE_MEAL),
+        advice = "Самое важное — не переедать: заброс провоцирует объём, а не только кислота. " +
+            "Ешьте медленно, не запивайте еду большим количеством воды."
+    ),
+    EPIGASTRIC_PAIN(
+        "Боль или жжение в подложечной области", "Боль", 1.0,
+        boosts = setOf(TriggerTag.SPICY, TriggerTag.ACID, TriggerTag.FRIED, TriggerTag.COARSE_FIBER, TriggerTag.ALCOHOL),
+        advice = "В период боли — максимально щадящее: варёное, тёплое, протёртое. " +
+            "Исключите острое, жареное и алкоголь до стихания симптомов."
+    ),
+    BLOATING(
+        "Вздутие, распирание", "Вздутие", 0.7,
+        boosts = setOf(TriggerTag.FODMAP, TriggerTag.CARBONATED, TriggerTag.LACTOSE, TriggerTag.SUGAR, TriggerTag.COARSE_FIBER, TriggerTag.ONION_GARLIC),
+        advice = "Ограничьте FODMAP-продукты (лук, чеснок, бобовые, яблоки, молоко, сиропы) и газированные " +
+            "напитки. Овощи — только термически обработанные."
+    ),
+    NAUSEA(
+        "Тошнота", "Тошнота", 0.8,
+        boosts = setOf(TriggerTag.FAT, TriggerTag.FRIED, TriggerTag.SPICY),
+        advice = "Помогают малые порции и холодная/нейтральная еда вместо горячей и жирной; " +
+            "не ложитесь сразу после еды."
+    ),
+    BELCHING(
+        "Отрыжка воздухом", "Отрыжка", 0.5,
+        boosts = setOf(TriggerTag.CARBONATED, TriggerTag.ONION_GARLIC, TriggerTag.VOLUME),
+        advice = "Уберите газировку, жвачку и трубочки для напитков, ешьте медленнее и не разговаривайте во время еды."
+    ),
+    NIGHT_COUGH(
+        "Ночной кашель, охриплость, першение", "Ночной кашель", 0.9,
+        boosts = setOf(TriggerTag.LATE_MEAL, TriggerTag.ACID, TriggerTag.FAT, TriggerTag.ALCOHOL),
+        advice = "Это экстраэзофагеальный признак рефлюкса. Последний приём — строго за 3 часа до сна, " +
+            "изголовье выше на 15–20 см, ужин без жира и кислоты."
+    ),
+    GLOBE(
+        "Ком в горле, ощущение сдавливания (globus)", "Ком в горле", 0.85,
+        boosts = setOf(TriggerTag.ACID, TriggerTag.LATE_MEAL, TriggerTag.CARBONATED, TriggerTag.SPICY),
+        advice = "Ком в горле часто связан с рефлюксом и напряжением мышц глотки. Уберите кислое и газированное, " +
+            "не ешьте перед сном; если ощущение постоянное — нужен осмотр врача."
+    ),
+    BITTER_TASTE(
+        "Горечь во рту", "Горечь", 0.6,
+        boosts = setOf(TriggerTag.FAT, TriggerTag.FRIED, TriggerTag.SMOKED),
+        advice = "Горечь чаще связана с забросом желчи: ограничьте жирное и жареное, " +
+            "не допускайте длинных перерывов между приёмами."
+    ),
+    DIARRHEA(
+        "Диарея", "Диарея", 0.7,
+        boosts = setOf(TriggerTag.FODMAP, TriggerTag.LACTOSE, TriggerTag.SUGAR, TriggerTag.CARBONATED),
+        advice = "Нужна растворимая клетчатка (овсянка, рис, банан, печёное яблоко) и ограничение FODMAP; " +
+            "следите за достаточным количеством жидкости."
+    ),
+    CONSTIPATION(
+        "Запор", "Запор", 0.4,
+        boosts = setOf(TriggerTag.VOLUME),
+        advice = "Растительная клетчатка и вода между приёмами (не во время еды), движение и регулярный режим. " +
+            "Грубую клетчатку вводите постепенно."
+    ),
+    EARLY_SATIETY(
+        "Быстрое насыщение, тяжесть", "Тяжесть", 0.6,
+        boosts = setOf(TriggerTag.VOLUME, TriggerTag.FAT, TriggerTag.FRIED),
+        advice = "Малые порции по 250–300 г и нежирная еда: ощущение тяжести усиливается от объёма и жира."
+    )
 }
 
 /**

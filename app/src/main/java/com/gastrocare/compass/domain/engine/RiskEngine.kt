@@ -190,6 +190,26 @@ class RiskEngine(private val foods: FoodLookup) {
             tagScores[t] = current * 1.6
         }
 
+        // 4.1. Отмеченные в профиле симптомы усиливают «свои» факторы:
+        // при вздутии опаснее FODMAP и газ, при изжоге — кислота, жир и объём.
+        // Раньше выбор симптомов не влиял ни на что.
+        val boostedBySymptoms = profile.symptoms.flatMap { it.boosts }.toSet()
+        val matchedSymptoms = profile.symptoms.filter { symptom ->
+            food.factors.any { it.tag in symptom.boosts }
+        }
+        if (boostedBySymptoms.isNotEmpty()) {
+            for (tag in boostedBySymptoms) {
+                val current = tagScores[tag] ?: continue
+                tagScores[tag] = current * SYMPTOM_BOOST
+            }
+        }
+        if (matchedSymptoms.isNotEmpty()) {
+            contextWarnings += "Учтены ваши симптомы (" +
+                matchedSymptoms.joinToString(", ") { it.short.lowercase() } +
+                "): для них этот продукт рискованнее обычного. " +
+                matchedSymptoms.first().advice
+        }
+
         var tagRaw = tagScores.values.sum()
 
         // 5. Контекст приёма
@@ -421,5 +441,12 @@ class RiskEngine(private val foods: FoodLookup) {
 
         /** Порог «зелёной» зоны. */
         const val SAFE_THRESHOLD = 25
+
+        /**
+         * Насколько отмеченный симптом усиливает «свой» фактор.
+         * Мягче личного триггера (×1,6): симптом — состояние, которое может пройти,
+         * а личный триггер — уже проверенная закономерность.
+         */
+        const val SYMPTOM_BOOST = 1.25
     }
 }

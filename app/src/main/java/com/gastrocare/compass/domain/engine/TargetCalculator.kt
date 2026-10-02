@@ -13,6 +13,7 @@ import com.gastrocare.compass.domain.model.RiskLevel
 import com.gastrocare.compass.domain.model.SafetyCheck
 import com.gastrocare.compass.domain.model.Severity
 import com.gastrocare.compass.domain.model.Sex
+import com.gastrocare.compass.domain.model.Symptom
 import com.gastrocare.compass.domain.model.UserProfile
 import kotlin.math.abs
 import kotlin.math.max
@@ -171,11 +172,19 @@ class TargetCalculator {
             }
         ) 200.0 else 300.0
 
-        val fiberTarget = when {
+        var fiberTarget = when {
             diagnoses.contains(Diagnosis.IBS) -> 22.0
             diagnoses.contains(Diagnosis.ULCER) || diagnoses.contains(Diagnosis.GASTRITIS_HIGH) -> 25.0
             diagnoses.contains(Diagnosis.PANCREATITIS) -> 22.0
             else -> 28.0
+        }
+        // Отмеченные симптомы корректируют цель по клетчатке: при запоре она выше,
+        // при диарее ниже и делается акцент на растворимые волокна.
+        if (profile.symptoms.contains(Symptom.CONSTIPATION)) {
+            fiberTarget = (fiberTarget + 3).coerceAtMost(30.0)
+        }
+        if (profile.symptoms.contains(Symptom.DIARRHEA)) {
+            fiberTarget = (fiberTarget - 4).coerceAtLeast(18.0)
         }
 
         // Количество приёмов задаёт пользователь: его режим важнее «идеального» плана.
@@ -238,7 +247,25 @@ class TargetCalculator {
                 "Вводите продукты по одному и следите за реакцией."
         }
 
-        // --- 7. Красные флаги ---------------------------------------------------
+        // --- 7. Советы под отмеченные симптомы --------------------------------
+        // Раньше список симптомов в профиле не влиял ни на расчёт, ни на советы.
+        if (profile.symptoms.isNotEmpty()) {
+            notes += "Отмеченные симптомы: " + profile.symptoms.joinToString(", ") { it.short.lowercase() } + "."
+            profile.symptoms.forEach { symptom ->
+                if (symptom.advice.isNotBlank()) {
+                    notes += "${symptom.short}: ${symptom.advice}"
+                }
+            }
+        }
+        if (profile.symptoms.contains(Symptom.NIGHT_COUGH) || profile.symptoms.contains(Symptom.GLOBE)) {
+            safety += "Есть экстраэзофагеальные симптомы (${profile.symptoms.filter {
+                it == Symptom.NIGHT_COUGH || it == Symptom.GLOBE
+            }.joinToString(", ") { it.short.lowercase() }}). Это чаще бывает при рефлюксе, в том числе ночном: " +
+                "последний приём строго за 3 часа до сна, изголовье выше на 15–20 см. " +
+                "Если симптомы держатся — обсудите с врачом обследование."
+        }
+
+        // --- 8. Красные флаги ---------------------------------------------------
         val urgent = profile.redFlags
         if (urgent.isNotEmpty()) {
             safety += "Внимание: отмечены признаки, при которых диета не заменяет врача — " +

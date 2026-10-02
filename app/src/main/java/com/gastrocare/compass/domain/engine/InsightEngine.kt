@@ -24,6 +24,7 @@ enum class InsightKind(val title: String) {
     SAFE_SWAP("Безопасная замена"),
     PORTION("Размер порции"),
     WEIGHT("Динамика веса"),
+    SYMPTOM_TIP("Что делать при симптоме"),
     DIAGNOSIS_TIP("Правило при вашем диагнозе")
 }
 
@@ -75,6 +76,7 @@ class InsightEngine {
         list += streakInsights(history)
         list += adherenceInsights(profile, targets, history)
         list += weightInsights(profile, weights, targets)
+        list += symptomTips(profile, targets)
         list += diagnosisTips(profile, targets)
         return list.sortedWith(compareByDescending<Insight> { it.severity.ordinal }.thenByDescending { it.priority })
     }
@@ -516,6 +518,30 @@ class InsightEngine {
     }
 
     // ------------------------------------------------------------------ правила по диагнозу
+
+    /**
+     * Практические советы под отмеченные симптомы.
+     *
+     * Раньше список симптомов в профиле ни на что не влиял: он сохранялся, но не читался.
+     * Теперь он усиливает «свои» факторы риска в [RiskEngine] и даёт эти подсказки.
+     */
+    fun symptomTips(profile: UserProfile, targets: NutritionTargets): List<Insight> =
+        profile.symptoms
+            .filter { it.advice.isNotBlank() }
+            .sortedByDescending { it.severityWeight }
+            .map { symptom ->
+                val boosted = symptom.boosts.map { it.title.lowercase() }.take(4)
+                Insight(
+                    kind = InsightKind.SYMPTOM_TIP,
+                    title = "${symptom.title}: что помогает",
+                    body = symptom.advice +
+                        if (boosted.isNotEmpty()) {
+                            "\n\nВ оценке продуктов этот симптом усиливает факторы: ${boosted.joinToString(", ")}."
+                        } else "",
+                    severity = if (symptom.severityWeight >= 0.85) Severity.WARNING else Severity.INFO,
+                    priority = 46
+                )
+            }
 
     fun diagnosisTips(profile: UserProfile, targets: NutritionTargets): List<Insight> {
         val result = mutableListOf<Insight>()

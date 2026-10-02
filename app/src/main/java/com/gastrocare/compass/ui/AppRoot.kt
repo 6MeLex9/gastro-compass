@@ -3,6 +3,8 @@ package com.gastrocare.compass.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
@@ -18,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -28,8 +31,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.gastrocare.compass.data.AppRepository
 import com.gastrocare.compass.ui.screens.AddFoodScreen
@@ -71,12 +76,30 @@ private data class NavState(
     fun selectTab(screen: Screen) = copy(stack = listOf(screen))
 }
 
+/**
+ * Вкладка нижней навигации.
+ *
+ * @param isAction центральная кнопка действия (добавление еды): она заметно выделена,
+ *        открывает экран добавления и не является «разделом» приложения
+ */
+private data class Tab(
+    val screen: Screen,
+    val icon: ImageVector,
+    val label: String,
+    val isAction: Boolean = false
+)
+
 private val TABS = listOf(
-    Triple(Screen.Dashboard, Icons.Filled.Home, "Сегодня"),
-    Triple(Screen.Diary, Icons.Filled.List, "Дневник"),
-    Triple(Screen.Advice, Icons.Filled.Info, "Подсказки"),
-    Triple(Screen.Analytics, Icons.Filled.Add, "Анализ"),
-    Triple(Screen.Profile, Icons.Filled.Person, "Профиль")
+    Tab(Screen.Dashboard, Icons.Filled.Home, "Сегодня"),
+    Tab(Screen.Diary, Icons.Filled.List, "Дневник"),
+    Tab(Screen.AddFood, Icons.Filled.Add, "Еда", isAction = true),
+    Tab(Screen.Advice, Icons.Filled.Info, "Подсказки"),
+    Tab(Screen.Profile, Icons.Filled.Person, "Профиль")
+)
+
+/** Экраны-разделы: для них скрывается стрелка «назад», в отличие от кнопки «Еда». */
+private val SECTION_SCREENS = setOf(
+    Screen.Dashboard, Screen.Diary, Screen.Advice, Screen.Profile, Screen.Analytics
 )
 
 @Composable
@@ -96,21 +119,55 @@ fun AppRoot(repo: AppRepository) {
 private fun MainNavigation() {
     var nav by remember { mutableStateOf(NavState()) }
     val current = nav.current
-    val isTab = TABS.any { it.first == current }
+    val isSection = current in SECTION_SCREENS
 
     // Системная кнопка «назад» сначала закрывает вложенный экран, а не приложение
-    androidx.activity.compose.BackHandler(enabled = !isTab) { nav = nav.pop() }
+    androidx.activity.compose.BackHandler(enabled = !isSection) { nav = nav.pop() }
 
     Scaffold(
-        topBar = { AppTopBar(title = current.title, showBack = !isTab, onBack = { nav = nav.pop() }) },
+        topBar = { AppTopBar(title = current.title, showBack = !isSection, onBack = { nav = nav.pop() }) },
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                TABS.forEach { (screen, icon, label) ->
+                TABS.forEach { tab ->
                     NavigationBarItem(
-                        selected = current == screen,
-                        onClick = { nav = nav.selectTab(screen) },
-                        icon = { Icon(icon, contentDescription = label) },
-                        label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                        selected = current == tab.screen,
+                        onClick = {
+                            // «Еда» — действие, а не раздел: открываем поверх текущего экрана,
+                            // чтобы возврат вёл туда, откуда пользователь пришёл
+                            nav = when {
+                                tab.isAction && current == tab.screen -> nav
+                                tab.isAction -> nav.push(tab.screen)
+                                else -> nav.selectTab(tab.screen)
+                            }
+                        },
+                        icon = {
+                            if (tab.isAction) {
+                                // Центральная кнопка добавления еды: основное действие приложения
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shape = RoundedCornerShape(50),
+                                    modifier = Modifier.size(46.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            tab.icon,
+                                            contentDescription = tab.label,
+                                            tint = MaterialTheme.colorScheme.onPrimary,
+                                            modifier = Modifier.size(26.dp)
+                                        )
+                                    }
+                                }
+                            } else {
+                                Icon(tab.icon, contentDescription = tab.label)
+                            }
+                        },
+                        label = {
+                            Text(
+                                tab.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (tab.isAction) FontWeight.SemiBold else null
+                            )
+                        }
                     )
                 }
             }
@@ -123,7 +180,8 @@ private fun MainNavigation() {
                     onScanLabel = { nav = nav.push(Screen.Label) },
                     onSymptoms = { nav = nav.push(Screen.Symptoms) },
                     onOpenAdvice = { nav = nav.selectTab(Screen.Advice) },
-                    onEditQuickPicks = { nav = nav.push(Screen.QuickPicks) }
+                    onEditQuickPicks = { nav = nav.push(Screen.QuickPicks) },
+                    onOpenAnalytics = { nav = nav.push(Screen.Analytics) }
                 )
 
                 Screen.Diary -> DiaryScreen(

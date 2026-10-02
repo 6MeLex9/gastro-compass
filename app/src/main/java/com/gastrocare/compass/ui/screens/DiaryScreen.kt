@@ -93,6 +93,10 @@ fun DiaryScreen(
                 KeyValueRow("Жиры", "${day.totals.fat.toInt()} / ${targets.fat.grams.toInt()} г")
                 KeyValueRow("Углеводы", "${day.totals.carbs.toInt()} / ${targets.carbs.grams.toInt()} г")
                 KeyValueRow(
+                    "Вода",
+                    "${repo.waterForDay(day.epochDay).toInt()} / ${targets.waterMl.toInt()} мл"
+                )
+                KeyValueRow(
                     "Максимальный риск",
                     "${day.maxRisk} · ${com.gastrocare.compass.domain.model.RiskLevel.fromScore(day.maxRisk).title}"
                 )

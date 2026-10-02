@@ -96,6 +96,64 @@ class RiskEngineTest {
     }
 
     @Test
+    fun `отмеченный симптом усиливает свои факторы`() {
+        val coffee = food("coffee-espresso")
+        // В профиле по умолчанию уже стоит изжога, поэтому базовую линию берём без симптомов
+        val without = engine.assess(coffee, 60.0, gerdProfile.copy(symptoms = emptySet()))
+        val withHeartburn = engine.assess(
+            coffee, 60.0,
+            gerdProfile.copy(symptoms = setOf(com.gastrocare.compass.domain.model.Symptom.HEARTBURN))
+        )
+
+        assertTrue(
+            "изжога должна усиливать риск кислого и кофеинового: ${withHeartburn.score} против ${without.score}",
+            withHeartburn.score > without.score
+        )
+        assertTrue(
+            "в предупреждениях должно быть сказано об учтённом симптоме",
+            withHeartburn.contextWarnings.any { it.contains("симптом", ignoreCase = true) }
+        )
+        assertTrue(
+            "без симптомов предупреждения о симптомах быть не должно",
+            without.contextWarnings.none { it.contains("симптом", ignoreCase = true) }
+        )
+    }
+
+    @Test
+    fun `симптом не влияет на продукты без его факторов`() {
+        val chicken = food("chicken-breast-boiled")
+        val base = engine.assess(chicken, 150.0, gerdProfile.copy(symptoms = emptySet()))
+        val withDiarrhea = engine.assess(
+            chicken, 150.0,
+            gerdProfile.copy(symptoms = setOf(com.gastrocare.compass.domain.model.Symptom.DIARRHEA))
+        )
+
+        assertEquals(
+            "щадящий продукт не должен становиться рискованнее из-за не связанного с ним симптома",
+            base.score, withDiarrhea.score
+        )
+    }
+
+    @Test
+    fun `личный триггер усиливает сильнее симптома`() {
+        val orange = food("orange")
+        val withSymptom = engine.assess(
+            orange, 150.0,
+            gerdProfile.copy(symptoms = setOf(com.gastrocare.compass.domain.model.Symptom.HEARTBURN))
+        )
+        val withTrigger = engine.assess(
+            orange, 150.0,
+            gerdProfile.copy(symptoms = emptySet(), personalTriggers = setOf(TriggerTag.CITRUS))
+        )
+
+        assertTrue(
+            "личный триггер (×1,6) должен давать больший риск, чем симптом (×1,25): " +
+                "${withTrigger.score} против ${withSymptom.score}",
+            withTrigger.score > withSymptom.score
+        )
+    }
+
+    @Test
     fun `оценка объясняет причины и предлагает замены`() {
         val assessment = engine.assess(food("sausage-boiled"), 100.0, gerdProfile)
 

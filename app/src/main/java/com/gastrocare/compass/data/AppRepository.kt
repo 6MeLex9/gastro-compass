@@ -19,6 +19,7 @@ import com.gastrocare.compass.domain.model.RedFlag
 import com.gastrocare.compass.domain.model.Symptom
 import com.gastrocare.compass.domain.model.SymptomRecord
 import com.gastrocare.compass.domain.model.UserProfile
+import com.gastrocare.compass.domain.model.WaterRecord
 import com.gastrocare.compass.domain.model.WeightRecord
 import org.json.JSONArray
 import org.json.JSONObject
@@ -55,6 +56,39 @@ class AppRepository(context: Context) {
         it.addAll(loaded)
         foods.loadCustom(loaded)
     }
+
+    /** Выпитая жидкость — отдельный журнал, потому что у воды свои правила (между приёмами пищи). */
+    val waterLog = mutableStateListOf<WaterRecord>().also { it.addAll(loadWater()) }
+
+    // ------------------------------------------------------------------ вода
+
+    fun addWater(ml: Double) {
+        if (ml <= 0) return
+        waterLog.add(WaterRecord(timestamp = System.currentTimeMillis(), ml = ml))
+        persistWater()
+    }
+
+    /** Отмена последней записи — на случай ошибочного нажатия. */
+    fun removeLastWater() {
+        val last = waterLog.maxByOrNull { it.timestamp } ?: return
+        waterLog.remove(last)
+        persistWater()
+    }
+
+    fun waterForDay(epochDay: Long): Double =
+        waterLog.filter { epochDayOf(it.timestamp) == epochDay }.sumOf { it.ml }
+
+    val waterTodayMl: Double get() = waterForDay(todayEpochDay())
+
+    /** Среднее потребление воды за последние дни (только дни с записями). */
+    fun averageWaterMl(days: Int = 7): Double {
+        val today = todayEpochDay()
+        val perDay = (0 until days).map { waterForDay(today - it) }.filter { it > 0 }
+        return if (perDay.isEmpty()) 0.0 else perDay.average()
+    }
+
+    fun waterEntriesToday(): List<WaterRecord> =
+        waterLog.filter { epochDayOf(it.timestamp) == todayEpochDay() }.sortedBy { it.timestamp }
 
     /** Ручной набор для «Быстро добавить». Пусто — набор подбирается автоматически. */
     val quickPickIds = mutableStateListOf<String>().also { it.addAll(loadQuickPicks()) }
@@ -269,6 +303,7 @@ class AppRepository(context: Context) {
         diary.clear()
         symptoms.clear()
         weights.clear()
+        waterLog.clear()
         customFoods.clear()
         foods.loadCustom(emptyList())
         prefs.edit().clear().apply()
@@ -282,6 +317,14 @@ class AppRepository(context: Context) {
         root.put("diary", JSONArray().apply { diary.forEach { put(entryToJson(it)) } })
         root.put("symptoms", JSONArray().apply { symptoms.forEach { put(symptomToJson(it)) } })
         root.put("weights", JSONArray().apply { weights.forEach { put(weightToJson(it)) } })
+        root.put("water", JSONArray().apply {
+            waterLog.forEach { record ->
+                put(JSONObject().apply {
+                    put("timestamp", record.timestamp)
+                    put("ml", record.ml)
+                })
+            }
+        })
         root.put("targets", JSONObject().apply {
             val t = targets
             put("calories", t.calories)
@@ -544,6 +587,32 @@ class AppRepository(context: Context) {
         (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotBlank() }
     }.getOrDefault(emptyList())
 
+    private fun loadWater(): List<WaterRecord> = runCatching {
+        val arr = JSONArray(prefs.getString(KEY_WATER, "[]") ?: "[]")
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            WaterRecord(
+                id = o.optString("id"),
+                timestamp = o.optLong("timestamp", System.currentTimeMillis()),
+                ml = o.optDouble("ml", 0.0)
+            )
+        }
+    }.getOrDefault(emptyList())
+
+    private fun persistWater() {
+        val arr = JSONArray()
+        waterLog.forEach { record ->
+            arr.put(
+                JSONObject().apply {
+                    put("id", record.id)
+                    put("timestamp", record.timestamp)
+                    put("ml", record.ml)
+                }
+            )
+        }
+        prefs.edit().putString(KEY_WATER, arr.toString()).apply()
+    }
+
     private fun persistDiary() {
         prefs.edit().putString(KEY_DIARY, JSONArray().apply { diary.forEach { put(entryToJson(it)) } }.toString()).apply()
     }
@@ -570,6 +639,7 @@ class AppRepository(context: Context) {
         const val KEY_CUSTOM_FOODS = "custom_foods"
         const val KEY_QUICK_PICKS = "quick_picks"
         const val KEY_DISMISSED_INSIGHTS = "dismissed_insights"
+        const val KEY_WATER = "water"
 
         /** Скрытая подсказка возвращается через неделю — данные за это время успевают измениться. */
         const val INSIGHT_HIDE_TTL_MS = 7L * 24 * 60 * 60 * 1000

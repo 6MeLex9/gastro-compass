@@ -93,3 +93,15 @@ data class WeightRecord(
     val timestamp: Long,
     val kg: Double
 )
+
+/**
+ * Запись о выпитой жидкости.
+ *
+ * Вода учитывается отдельно от еды: при ГЭРБ важно и количество, и то, что пить её лучше
+ * между приёмами пищи, а не во время еды.
+ */
+data class WaterRecord(
+    val id: String = UUID.randomUUID().toString(),
+    val timestamp: Long,
+    val ml: Double
+)

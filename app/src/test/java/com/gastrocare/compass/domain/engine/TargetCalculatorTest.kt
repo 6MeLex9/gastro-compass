@@ -313,6 +313,56 @@ class TargetCalculatorTest {
     )
 
     @Test
+    fun `запор повышает цель по клетчатке, диарея понижает`() {
+        val base = calculator.calculate(profile())
+        val constipation = calculator.calculate(
+            profile().copy(symptoms = setOf(com.gastrocare.compass.domain.model.Symptom.CONSTIPATION))
+        )
+        val diarrhea = calculator.calculate(
+            profile().copy(symptoms = setOf(com.gastrocare.compass.domain.model.Symptom.DIARRHEA))
+        )
+
+        assertTrue(constipation.fiberTargetGrams > base.fiberTargetGrams)
+        assertTrue(diarrhea.fiberTargetGrams < base.fiberTargetGrams)
+        assertTrue(constipation.notes.any { it.contains("Запор") })
+    }
+
+    @Test
+    fun `ночной кашель добавляет предупреждение о экстраэзофагеальных симптомах`() {
+        val targets = calculator.calculate(
+            profile().copy(symptoms = setOf(com.gastrocare.compass.domain.model.Symptom.NIGHT_COUGH))
+        )
+
+        assertTrue(targets.safetyWarnings.any { it.contains("экстраэзофагеальные", ignoreCase = true) })
+    }
+
+    @Test
+    fun `советы под отмеченные симптомы попадают в план`() {
+        val targets = calculator.calculate(
+            profile().copy(symptoms = setOf(com.gastrocare.compass.domain.model.Symptom.BLOATING))
+        )
+
+        assertTrue(targets.notes.any { it.contains("Отмеченные симптомы") })
+        assertTrue(targets.notes.any { it.contains("FODMAP", ignoreCase = true) })
+    }
+
+    @Test
+    fun `подсказки содержат советы по каждому отмеченному симптому`() {
+        val engine = InsightEngine()
+        val p = profile().copy(
+            symptoms = setOf(
+                com.gastrocare.compass.domain.model.Symptom.BLOATING,
+                com.gastrocare.compass.domain.model.Symptom.HEARTBURN
+            )
+        )
+        val insights = engine.all(p, calculator.calculate(p), DayLog(0), emptyList(), emptyList())
+        val tips = insights.filter { it.kind == com.gastrocare.compass.domain.engine.InsightKind.SYMPTOM_TIP }
+
+        assertEquals("должно быть по подсказке на симптом", 2, tips.size)
+        assertTrue(tips.all { it.body.length > 30 })
+    }
+
+    @Test
     fun `инсайты формируются для пустого и заполненного дневника`() {
         val engine = InsightEngine()
         val p = profile()

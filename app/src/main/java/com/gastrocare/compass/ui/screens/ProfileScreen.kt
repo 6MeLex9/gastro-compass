@@ -148,7 +148,30 @@ fun ProfileScreen(
         }
 
         Spacer(Modifier.height(12.dp))
-        SectionCard(collapsible = true, initiallyExpanded = false, title = "Диагнозы и симптомы") {
+        SectionCard(
+            collapsible = true,
+            initiallyExpanded = false,
+            title = "Диагнозы и симптомы",
+            subtitle = if (profile.symptoms.isEmpty()) {
+                "Диагноз задаёт веса факторов риска, симптомы — усилители"
+            } else {
+                "Диагнозов: ${profile.diagnoses.size}, симптомов: ${profile.symptoms.size} — учтены в расчётах"
+            }
+        ) {
+            NoticeCard(
+                title = "На что это влияет",
+                body = "Диагнозы задают веса факторов риска и лимиты (жир, клетчатка, калорийность).\n\n" +
+                    "Симптомы — усилители: если вы отметили вздутие, приложение строже оценивает продукты " +
+                    "с FODMAP, газом и лактозой; если изжогу — кислое, жирное, поздний приём и объём. " +
+                    "Отмеченный симптом поднимает вес «своих» факторов в 1,25 раза и добавляет " +
+                    "предупреждение в оценке продукта. Дополнительно симптомы меняют цель по клетчатке " +
+                    "(при запоре выше, при диарее ниже) и дают советы в «Подсказках».\n\n" +
+                    "Отмечайте то, что беспокоит сейчас: когда симптом проходит — снимите отметку, " +
+                    "иначе оценки останутся завышенными.",
+                icon = Icons.Filled.Info,
+                accent = GastroColors.Info
+            )
+            Spacer(Modifier.height(12.dp))
             val diagnoses = Diagnosis.entries.toList()
             PillMultiSelect(
                 title = "Диагнозы",
@@ -186,6 +209,20 @@ fun ProfileScreen(
                 },
                 columns = 3
             )
+            val selectedSymptoms = Symptom.entries.filter { profile.symptoms.contains(it) }
+            if (selectedSymptoms.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                Text("Что делать при отмеченных симптомах", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(6.dp))
+                selectedSymptoms.forEach { symptom ->
+                    Text(
+                        "• ${symptom.short}: ${symptom.advice}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                }
+            }
         }
 
         Spacer(Modifier.height(12.dp))
@@ -193,8 +230,24 @@ fun ProfileScreen(
             collapsible = true,
             initiallyExpanded = false,
             title = "Личные триггеры",
-            subtitle = "Отметьте то, после чего вам становится плохо: вес фактора вырастет в 1,6 раза"
+            subtitle = if (profile.personalTriggers.isEmpty()) {
+                "Ваш личный опыт: отмеченное усиливает риск сильнее всего"
+            } else {
+                "Отмечено: ${profile.personalTriggers.size} — вес фактора ×1,6 и уровень «избегать»"
+            }
         ) {
+            NoticeCard(
+                title = "На что это влияет",
+                body = "Это самый сильный индивидуальный фактор. Если продукт содержит отмеченный триггер, " +
+                    "его вес в оценке риска умножается на 1,6, а сам продукт почти всегда получает уровень " +
+                    "«избегать» — даже если по общим правилам он считался бы допустимым.\n\n" +
+                    "Отмечайте здесь то, что вы уже проверили на себе: например, после кофе или цитрусовых " +
+                    "стабильно появляется изжога. Приложение также предлагает добавить сюда триггеры, " +
+                    "найденные по вашему дневнику (вкладка «Подсказки»).",
+                icon = Icons.Filled.Info,
+                accent = GastroColors.Caution
+            )
+            Spacer(Modifier.height(12.dp))
             PillMultiSelect(
                 title = "",
                 options = TriggerTag.entries.map { it.title },
